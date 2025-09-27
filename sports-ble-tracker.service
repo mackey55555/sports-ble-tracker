@@ -1,0 +1,20 @@
+[Unit]
+Description=Sports BLE Tracker Service
+After=network.target bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/bin/bash /home/pi/sports-ble-tracker/start-ble-tracker.sh 001 プレイヤー001
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+# ログ設定
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sports-ble-tracker
+
+[Install]
+WantedBy=multi-user.target
