@@ -2,6 +2,7 @@
 import noble from '@abandonware/noble';
 import { requestI2CAccess } from "node-web-i2c";
 import MAX30102 from "@chirimen/max30102";
+import https from 'https';
 
 class SmartBLEDemo {
   constructor(playerId, playerName, debug = false) {
@@ -13,6 +14,8 @@ class SmartBLEDemo {
     this.max30102 = null;
     this.isReady = false;
     this.sensorReadingInProgress = false;
+    this.apiEndpoint = 'https://love-sports.vercel.app/api/telemetry';
+    this.telemetryQueue = new Map(); // 送信待ちのテレメトリデータ
     
     // 既知のMACアドレスとプレイヤーIDの対応表
     this.knownDevices = {
@@ -312,12 +315,131 @@ class SmartBLEDemo {
     if (rssi === 0) return -1;
     
     const ratio = (txPower - rssi) / 20.0;
-    return Math.pow(10, ratio);
+    const distance = Math.pow(10, ratio);
+    
+    // 距離の範囲を制限（0.1m - 100m）
+    const clampedDistance = Math.max(0.1, Math.min(100, distance));
+    
+    if (this.debug) {
+      console.log(`    📏 距離計算: RSSI=${rssi}, 計算値=${distance.toFixed(3)}m, 制限後=${clampedDistance.toFixed(3)}m`);
+    }
+    
+    return clampedDistance;
   }
 
   logProximityEvent(data) {
     const logLine = `${data.timestamp.toISOString()},${data.myPlayerId},${data.nearbyPlayerId},${data.distance.toFixed(2)},${data.myHeartRate}`;
     console.log(`📝 ログ: ${logLine}`);
+    
+    // テレメトリAPI送信（心拍数と距離が両方取得できている場合のみ）
+    if (data.myHeartRate !== null && data.myHeartRate > 0) {
+      this.sendTelemetryData(data);
+    } else {
+      console.log('⚠️ 心拍数が取得できていないため、テレメトリAPI送信をスキップ');
+    }
+  }
+
+  // テレメトリAPI送信
+  async sendTelemetryData(proximityData) {
+    const telemetryData = {
+      deviceId: proximityData.myPlayerId,
+      nearbyDeviceId: proximityData.nearbyPlayerId,
+      distance: Math.max(0, Math.round(proximityData.distance * 100) / 100), // メートル単位、小数点以下2桁に丸める
+      heartRate: Math.max(30, Math.min(250, proximityData.myHeartRate)) // 30-250の範囲に制限
+    };
+
+    // 重複送信を防ぐためのキー
+    const telemetryKey = `${telemetryData.deviceId}-${telemetryData.nearbyDeviceId}-${Math.floor(proximityData.timestamp.getTime() / 1000)}`;
+    
+    if (this.telemetryQueue.has(telemetryKey)) {
+      console.log('🔄 テレメトリデータの重複送信をスキップ');
+      return;
+    }
+
+    this.telemetryQueue.set(telemetryKey, telemetryData);
+    console.log(`📡 テレメトリAPI送信開始: ${JSON.stringify(telemetryData)}`);
+    console.log(`    📏 送信距離: ${telemetryData.distance}m (元の距離: ${proximityData.distance.toFixed(3)}m)`);
+
+    try {
+      await this.sendTelemetryWithRetry(telemetryData, 3);
+      this.telemetryQueue.delete(telemetryKey);
+    } catch (error) {
+      console.error('❌ テレメトリAPI送信失敗:', error.message);
+      this.telemetryQueue.delete(telemetryKey);
+    }
+  }
+
+  // リトライ機能付きテレメトリAPI送信
+  async sendTelemetryWithRetry(telemetryData, maxRetries) {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.sendHttpRequest(telemetryData);
+        
+        if (result.success) {
+          console.log(`✅ テレメトリAPI送信成功 (試行${attempt}/${maxRetries}):`, result.data);
+          return result;
+        } else {
+          throw new Error(`API Error: ${result.error}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ テレメトリAPI送信失敗 (試行${attempt}/${maxRetries}):`, error.message);
+        
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        
+        // 指数バックオフ: 1秒、2秒、4秒
+        const delay = Math.pow(2, attempt - 1) * 1000;
+        console.log(`⏳ ${delay}ms後にリトライします...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  // HTTPリクエスト送信（httpsモジュール使用）
+  async sendHttpRequest(telemetryData) {
+    return new Promise((resolve, reject) => {
+      const postData = JSON.stringify(telemetryData);
+      
+      const options = {
+        hostname: 'love-sports.vercel.app',
+        port: 443,
+        path: '/api/telemetry',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              resolve(result);
+            } else {
+              reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+            }
+          } catch (error) {
+            reject(new Error(`JSON Parse Error: ${error.message}`));
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        reject(new Error(`Request Error: ${error.message}`));
+      });
+
+      req.write(postData);
+      req.end();
+    });
   }
 
   stop() {
