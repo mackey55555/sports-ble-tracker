@@ -1,0 +1,45 @@
+{
+  "name": "sports-ble-tracker",
+  "version": "1.0.0",
+  "description": "スポーツ用BLE距離測定デモ - Raspberry Pi同士でBLEを使用した距離測定と心拍数モニタリング",
+  "main": "smart-ble-demo.js",
+  "type": "module",
+  "scripts": {
+    "start": "node smart-ble-demo.js",
+    "dev": "node smart-ble-demo.js --debug",
+    "player1": "node smart-ble-demo.js 001 'プレイヤー1'",
+    "player2": "node smart-ble-demo.js 002 'プレイヤー2'",
+    "player3": "node smart-ble-demo.js 003 'プレイヤー3'",
+    "player4": "node smart-ble-demo.js 004 'プレイヤー4'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ble",
+    "bluetooth",
+    "raspberry-pi",
+    "distance-measurement",
+    "heart-rate",
+    "sports",
+    "tracking",
+    "i2c",
+    "max30102"
+  ],
+  "author": "Sports BLE Tracker Team",
+  "license": "MIT",
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-15",
+    "@chirimen/max30102": "^1.0.0",
+    "node-web-i2c": "^0.2.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/sports-ble-tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/sports-ble-tracker/issues"
+  },
+  "homepage": "https://github.com/your-username/sports-ble-tracker#readme"
+}
