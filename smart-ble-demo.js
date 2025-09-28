@@ -334,6 +334,9 @@ class SmartBLEDemo {
     // テレメトリAPI送信（心拍数と距離が両方取得できている場合のみ）
     if (data.myHeartRate !== null && data.myHeartRate > 0) {
       this.sendTelemetryData(data);
+      
+      // デモ用ダミーデータ送信
+      this.sendDemoDummyData(data);
     } else {
       console.log('⚠️ 心拍数が取得できていないため、テレメトリAPI送信をスキップ');
     }
@@ -394,6 +397,83 @@ class SmartBLEDemo {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
+  }
+
+  // デモ用ダミーデータ送信
+  async sendDemoDummyData(realData) {
+    console.log('🎭 デモ用ダミーデータ送信開始...');
+    
+    // 利用可能なプレイヤーIDリスト
+    const allPlayerIds = ['001', '002', '003', '004'];
+    const realPlayerIds = ['001', '004']; // 実際に存在するプレイヤー
+    
+    // 自身のプレイヤーID
+    const myPlayerId = realData.myPlayerId;
+    
+    // 送信するダミーデータを生成
+    const dummyDataList = [];
+    
+    // ランダムなdeviceIdを選択（001,002,003,004から）
+    const randomDeviceId = allPlayerIds[Math.floor(Math.random() * allPlayerIds.length)];
+    
+    // deviceIdが001か004の場合は、nearbyDeviceIdは002か003のみ
+    let targetPlayerIds;
+    if (['001', '004'].includes(randomDeviceId)) {
+      targetPlayerIds = ['002', '003'];
+    } else {
+      // deviceIdが002か003の場合は、全プレイヤーから選択（自分以外）
+      targetPlayerIds = allPlayerIds.filter(id => id !== randomDeviceId);
+    }
+    
+    for (const targetPlayerId of targetPlayerIds) {
+      // ダミーデータを生成
+      const dummyData = {
+        deviceId: randomDeviceId,
+        nearbyDeviceId: targetPlayerId,
+        distance: this.generateDummyDistance(),
+        heartRate: this.generateDummyHeartRate(realData.myHeartRate, randomDeviceId === myPlayerId)
+      };
+      
+      dummyDataList.push(dummyData);
+    }
+    
+    // ダミーデータを送信
+    for (const dummyData of dummyDataList) {
+      try {
+        console.log(`🎭 ダミーデータ送信: ${JSON.stringify(dummyData)}`);
+        await this.sendTelemetryWithRetry(dummyData, 1); // リトライは1回のみ
+      } catch (error) {
+        console.warn(`⚠️ ダミーデータ送信失敗: ${error.message}`);
+      }
+    }
+    
+    console.log(`✅ ダミーデータ送信完了: ${dummyDataList.length}件`);
+  }
+
+  // ダミー距離生成（5-15m）
+  generateDummyDistance() {
+    const minDistance = 5.0;
+    const maxDistance = 15.0;
+    const distance = minDistance + Math.random() * (maxDistance - minDistance);
+    return Math.round(distance * 100) / 100; // 小数点以下2桁
+  }
+
+  // ダミー心拍数生成
+  generateDummyHeartRate(realHeartRate, isSameDeviceId) {
+    // deviceIdが自身と同じ場合は実際の心拍数を使用
+    if (isSameDeviceId && realHeartRate !== null && realHeartRate > 0) {
+      return realHeartRate;
+    }
+    
+    if (realHeartRate === null || realHeartRate <= 0) {
+      // リアル心拍数がない場合は適度な値を生成
+      return Math.floor(70 + Math.random() * 20); // 70-90bpm
+    }
+    
+    // リアル心拍数より10-30bpm低い値を生成
+    const reduction = 10 + Math.random() * 20; // 10-30bpm減
+    const dummyHeartRate = Math.max(60, realHeartRate - reduction);
+    return Math.floor(dummyHeartRate);
   }
 
   // HTTPリクエスト送信（httpsモジュール使用）
